@@ -8,6 +8,7 @@ import re
 import yaml
 import os
 from queue import LifoQueue
+import util.os_env as os_env
 
 from util.log import logger
 
@@ -104,49 +105,92 @@ class ConnectionProperties:
                  validate_query=__DEFAULT_VALIDATE_QUERY__,
                  validate_interval=__DEFAULT_VALIDATE_INTERVAL__,
                  max_wait_time=__DEFAULT_MAX_WAIT_TIME__):
-        self.user = user if user is not None else __DEFAULT_USER__
-        self.password = password if password is not None else __DEFAULT_PASSWORD__
-        self.host = host if host is not None else __DEFAULT_HOST__
-        self.database = database if database is not None else __DEFAULT_DATABASE__
-        self.unix_socket = unix_socket if unix_socket is not None else __DEFAULT_UNIX_SOCKET__
-        self.port = port if port is not None else __DEFAULT_PORT__
-        self.charset = charset if charset is not None else __DEFAULT_CHARSET__
-        self.sql_mode = sql_mode if sql_mode is not None else __DEFAULT_SQL_MODE__
-        self.read_default_file = read_default_file if read_default_file is not None else __DEFAULT_READ_DEFAULT_FILE__
-        self.conv = conv if conv is not None else __DEFAULT_CONV__
-        self.use_unicode = use_unicode if use_unicode is not None else __DEFAULT_USE_UNICODE__
-        self.client_flag = client_flag if client_flag is not None else __DEFAULT_CLIENT_FLAG__
-        self.init_command = init_command if init_command is not None else __DEFAULT_INIT_COMMAND__
-        self.connect_timeout = connect_timeout if connect_timeout is not None else __DEFAULT_CONNECT_TIMEOUT__
-        self.read_default_group = read_default_group if read_default_group is not None else __DEFAULT_READ_DEFAULT_GROUP__
-        self.autocommit = autocommit if autocommit is not None else __DEFAULT_AUTOCOMMIT__
-        self.local_infile = local_infile if local_infile is not None else __DEFAULT_LOCAL_INFILE__
-        self.max_allowed_packet = max_allowed_packet if max_allowed_packet is not None else __DEFAULT_MAX_ALLOWED_PACKET__
-        self.defer_connect = defer_connect if defer_connect is not None else __DEFAULT_DEFER_CONNECT__
-        self.auth_plugin_map = auth_plugin_map if auth_plugin_map is not None else __DEFAULT_AUTH_PLUGIN_MAP__
-        self.read_timeout = read_timeout if read_timeout is not None else __DEFAULT_READ_TIMEOUT__
-        self.write_timeout = write_timeout if write_timeout is not None else __DEFAULT_WRITE_TIMEOUT__
-        self.bind_address = bind_address if bind_address is not None else __DEFAULT_BIND_ADDRESS__
-        self.binary_prefix = binary_prefix if binary_prefix is not None else __DEFAULT_BINARY_PREFIX__
-        self.program_name = program_name if program_name is not None else __DEFAULT_PROGRAM_NAME__
-        self.server_public_key = server_public_key if server_public_key is not None else __DEFAULT_SERVER_PUBLIC_KEY__
-        self.ssl = ssl if ssl is not None else __DEFAULT_SSL__
-        self.ssl_ca = ssl_ca if ssl_ca is not None else __DEFAULT_SSL_CA__
-        self.ssl_cert = ssl_cert if ssl_cert is not None else __DEFAULT_SSL_CERT__
-        self.ssl_disabled = ssl_disabled if ssl_disabled is not None else __DEFAULT_SSL_DISABLED__
-        self.ssl_key = ssl_key if ssl_key is not None else __DEFAULT_SSL_KEY__
-        self.ssl_verify_cert = ssl_verify_cert if ssl_verify_cert is not None else __DEFAULT_SSL_VERIFY_CERT__
-        self.ssl_verify_identity = ssl_verify_identity if ssl_verify_identity is not None else __DEFAULT_SSL_VERIFY_IDENTITY__
-        self.compress = compress if compress is not None else __DEFAULT_COMPRESS__  # not supported
-        self.named_pipe = named_pipe if named_pipe is not None else __DEFAULT_NAMED_PIPE__  # not supported
-        self.passwd = passwd if passwd is not None else __DEFAULT_PASSWD__  # deprecated
-        self.db = db if db is not None else __DEFAULT_DB__  # deprecated,
-        self.pool_maxsize = pool_maxsize if pool_maxsize is not None else __DEFAULT_POOL_MAX_SIZE__
-        self.pool_minsize = pool_minsize if pool_minsize is not None else __DEFAULT_POOL_MIN_SIZE__
-        self.max_lifetime = max_lifetime if max_lifetime is not None else __DEFAULT_MAX_LIFETIME__
-        self.validate_query = validate_query if validate_query is not None else __DEFAULT_VALIDATE_QUERY__
-        self.validate_interval = validate_interval if validate_interval is not None else __DEFAULT_VALIDATE_INTERVAL__
-        self.max_wait_time = max_wait_time if max_wait_time is not None else __DEFAULT_MAX_WAIT_TIME__
+        self.user = __DEFAULT_USER__ if user is None else user if not os_env.is_os_evn(user) else os_env.get_env(user,
+                                                                                                                 __DEFAULT_USER__)
+        self.password = __DEFAULT_PASSWORD__ if password is None else password if not os_env.is_os_evn(
+            password) else os_env.get_env(password, __DEFAULT_PASSWORD__)
+        self.host = __DEFAULT_HOST__ if host is None else host if not os_env.is_os_evn(host) else os_env.get_env(host,
+                                                                                                                 __DEFAULT_HOST__)
+        self.database = __DEFAULT_DATABASE__ if database is None else database if not os_env.is_os_evn(
+            database) else os_env.get_env(database, __DEFAULT_DATABASE__)
+        self.unix_socket = __DEFAULT_UNIX_SOCKET__ if unix_socket is None else unix_socket if not os_env.is_os_evn(
+            unix_socket) else os_env.get_env(unix_socket, __DEFAULT_UNIX_SOCKET__)
+        self.port = __DEFAULT_PORT__ if port is None else port if not os_env.is_os_evn(str(port)) else int(
+            os_env.get_env(str(port), __DEFAULT_PORT__))
+        self.charset = __DEFAULT_CHARSET__ if charset is None else charset if not os_env.is_os_evn(
+            charset) else os_env.get_env(charset, __DEFAULT_CHARSET__)
+        self.sql_mode = __DEFAULT_SQL_MODE__ if sql_mode is None else sql_mode if not os_env.is_os_evn(
+            sql_mode) else os_env.get_env(sql_mode, __DEFAULT_SQL_MODE__)
+        self.read_default_file = __DEFAULT_READ_DEFAULT_FILE__ if read_default_file is None else read_default_file if not os_env.is_os_evn(
+            read_default_file) else os_env.get_env(read_default_file, __DEFAULT_READ_DEFAULT_FILE__)
+        self.conv = __DEFAULT_CONV__ if conv is None else conv if not os_env.is_os_evn(conv) else os_env.get_env(conv,
+                                                                                                                 __DEFAULT_CONV__)
+        self.use_unicode = __DEFAULT_USE_UNICODE__ if use_unicode is None else use_unicode if not os_env.is_os_evn(
+            str(use_unicode)) else bool(os_env.get_env(str(use_unicode), __DEFAULT_USE_UNICODE__))
+        self.client_flag = __DEFAULT_CLIENT_FLAG__ if client_flag is None else client_flag if not os_env.is_os_evn(
+            str(client_flag)) else int(os_env.get_env(str(client_flag), __DEFAULT_CLIENT_FLAG__))
+        self.init_command = __DEFAULT_INIT_COMMAND__ if init_command is None else init_command if not os_env.is_os_evn(
+            init_command) else os_env.get_env(init_command, __DEFAULT_INIT_COMMAND__)
+        self.connect_timeout = __DEFAULT_CONNECT_TIMEOUT__ if connect_timeout is None else connect_timeout if not os_env.is_os_evn(
+            str(connect_timeout)) else int(os_env.get_env(str(connect_timeout), __DEFAULT_CONNECT_TIMEOUT__))
+        self.read_default_group = __DEFAULT_READ_DEFAULT_GROUP__ if read_default_group is None else read_default_group if not os_env.is_os_evn(
+            read_default_group) else os_env.get_env(read_default_group, __DEFAULT_READ_DEFAULT_GROUP__)
+        self.autocommit = __DEFAULT_AUTOCOMMIT__ if autocommit is None else autocommit if not os_env.is_os_evn(
+            str(autocommit)) else bool(os_env.get_env(str(autocommit), __DEFAULT_AUTOCOMMIT__))
+        self.local_infile = __DEFAULT_LOCAL_INFILE__ if local_infile is None else local_infile if not os_env.is_os_evn(
+            str(local_infile)) else bool(os_env.get_env(str(local_infile), __DEFAULT_LOCAL_INFILE__))
+        self.max_allowed_packet = __DEFAULT_MAX_ALLOWED_PACKET__ if max_allowed_packet is None else max_allowed_packet if not os_env.is_os_evn(
+            str(max_allowed_packet)) else int(os_env.get_env(str(max_allowed_packet), __DEFAULT_MAX_ALLOWED_PACKET__))
+        self.defer_connect = __DEFAULT_DEFER_CONNECT__ if defer_connect is None else defer_connect if not os_env.is_os_evn(
+            str(defer_connect)) else bool(os_env.get_env(str(defer_connect), __DEFAULT_DEFER_CONNECT__))
+        self.auth_plugin_map = __DEFAULT_AUTH_PLUGIN_MAP__ if auth_plugin_map is None else auth_plugin_map if not os_env.is_os_evn(
+            auth_plugin_map) else os_env.get_env(auth_plugin_map, __DEFAULT_AUTH_PLUGIN_MAP__)
+        self.read_timeout = __DEFAULT_READ_TIMEOUT__ if read_timeout is None else read_timeout if not os_env.is_os_evn(
+            str(read_timeout)) else int(os_env.get_env(str(read_timeout), __DEFAULT_READ_TIMEOUT__))
+        self.write_timeout = __DEFAULT_WRITE_TIMEOUT__ if write_timeout is None else write_timeout if not os_env.is_os_evn(
+            str(write_timeout)) else int(os_env.get_env(str(write_timeout), __DEFAULT_WRITE_TIMEOUT__))
+        self.bind_address = __DEFAULT_BIND_ADDRESS__ if bind_address is None else bind_address if not os_env.is_os_evn(
+            bind_address) else os_env.get_env(bind_address, __DEFAULT_BIND_ADDRESS__)
+        self.binary_prefix = __DEFAULT_BINARY_PREFIX__ if binary_prefix is None else binary_prefix if not os_env.is_os_evn(
+            str(binary_prefix)) else bool(os_env.get_env(str(binary_prefix), __DEFAULT_BINARY_PREFIX__))
+        self.program_name = __DEFAULT_PROGRAM_NAME__ if program_name is None else program_name if not os_env.is_os_evn(
+            program_name) else os_env.get_env(program_name, __DEFAULT_PROGRAM_NAME__)
+        self.server_public_key = __DEFAULT_SERVER_PUBLIC_KEY__ if server_public_key is None else server_public_key if not os_env.is_os_evn(
+            server_public_key) else os_env.get_env(server_public_key, __DEFAULT_SERVER_PUBLIC_KEY__)
+        self.ssl = __DEFAULT_SSL__ if ssl is None else ssl if not os_env.is_os_evn(ssl) else os_env.get_env(ssl,
+                                                                                                            __DEFAULT_SSL__)
+        self.ssl_ca = __DEFAULT_SSL_CA__ if ssl_ca is None else ssl_ca if not os_env.is_os_evn(
+            ssl_ca) else os_env.get_env(ssl_ca, __DEFAULT_SSL_CA__)
+        self.ssl_cert = __DEFAULT_SSL_CERT__ if ssl_cert is None else ssl_cert if not os_env.is_os_evn(
+            ssl_cert) else os_env.get_env(ssl_cert, __DEFAULT_SSL_CERT__)
+        self.ssl_disabled = __DEFAULT_SSL_DISABLED__ if ssl_disabled is None else ssl_disabled if not os_env.is_os_evn(
+            ssl_disabled) else os_env.get_env(ssl_disabled, __DEFAULT_SSL_DISABLED__)
+        self.ssl_key = __DEFAULT_SSL_KEY__ if ssl_key is None else ssl_key if not os_env.is_os_evn(
+            ssl_key) else os_env.get_env(ssl_key, __DEFAULT_SSL_KEY__)
+        self.ssl_verify_cert = __DEFAULT_SSL_VERIFY_CERT__ if ssl_verify_cert is None else ssl_verify_cert if not os_env.is_os_evn(
+            ssl_verify_cert) else os_env.get_env(ssl_verify_cert, __DEFAULT_SSL_VERIFY_CERT__)
+        self.ssl_verify_identity = __DEFAULT_SSL_VERIFY_IDENTITY__ if ssl_verify_identity is None else ssl_verify_identity if not os_env.is_os_evn(
+            ssl_verify_identity) else os_env.get_env(ssl_verify_identity, __DEFAULT_SSL_VERIFY_IDENTITY__)
+        self.compress = __DEFAULT_COMPRESS__ if compress is None else compress if not os_env.is_os_evn(
+            compress) else os_env.get_env(compress, __DEFAULT_COMPRESS__)
+        self.named_pipe = __DEFAULT_NAMED_PIPE__ if named_pipe is None else named_pipe if not os_env.is_os_evn(
+            named_pipe) else os_env.get_env(named_pipe, __DEFAULT_NAMED_PIPE__)
+        self.passwd = __DEFAULT_PASSWD__ if passwd is None else passwd if not os_env.is_os_evn(
+            passwd) else os_env.get_env(passwd, __DEFAULT_PASSWD__)
+        self.db = __DEFAULT_DB__ if db is None else db if not os_env.is_os_evn(db) else os_env.get_env(db,
+                                                                                                       __DEFAULT_DB__)
+        self.pool_maxsize = __DEFAULT_POOL_MAX_SIZE__ if pool_maxsize is None else pool_maxsize if not os_env.is_os_evn(
+            str(pool_maxsize)) else int(os_env.get_env(str(pool_maxsize), __DEFAULT_POOL_MAX_SIZE__))
+        self.pool_minsize = __DEFAULT_POOL_MIN_SIZE__ if pool_minsize is None else pool_minsize if not os_env.is_os_evn(
+            str(pool_minsize)) else int(os_env.get_env(str(pool_minsize), __DEFAULT_POOL_MIN_SIZE__))
+        self.max_lifetime = __DEFAULT_MAX_LIFETIME__ if max_lifetime is None else max_lifetime if not os_env.is_os_evn(
+            str(max_lifetime)) else int(os_env.get_env(str(max_lifetime), __DEFAULT_MAX_LIFETIME__))
+        self.validate_query = __DEFAULT_VALIDATE_QUERY__ if validate_query is None else validate_query if not os_env.is_os_evn(
+            validate_query) else os_env.get_env(validate_query, __DEFAULT_VALIDATE_QUERY__)
+        self.validate_interval = __DEFAULT_VALIDATE_INTERVAL__ if validate_interval is None else validate_interval if not os_env.is_os_evn(
+            str(validate_interval)) else int(os_env.get_env(str(validate_interval), __DEFAULT_VALIDATE_INTERVAL__))
+        self.max_wait_time = __DEFAULT_MAX_WAIT_TIME__ if max_wait_time is None else max_wait_time if not os_env.is_os_evn(
+            str(max_wait_time)) else int(os_env.get_env(str(max_wait_time), __DEFAULT_MAX_WAIT_TIME__))
         pass
 
     pass
