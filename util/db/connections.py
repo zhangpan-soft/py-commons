@@ -425,8 +425,9 @@ class ConnectionPool:
     def get_conn(self) -> Connection:
         if self.__destroying__:
             raise Exception('连接池正在销毁')
-
+        log.debug('get_conn,当前连接池大小:%s', self.__conns__.qsize())
         if self.__thread_local__.current_conn:
+            log.debug('get_conn,当前连接池大小:%s', self.__conns__.qsize())
             return self.__thread_local__.current_conn
         self.__current_conn_lock__.acquire(blocking=True, timeout=self.properties.connect_timeout)
         try:
@@ -440,6 +441,7 @@ class ConnectionPool:
         finally:
             self.__current_conn_lock__.release()
             pass
+        log.debug('get_conn,当前连接池大小:%s', self.__conns__.qsize())
         return self.__thread_local__.current_conn
         pass
 
@@ -447,6 +449,8 @@ class ConnectionPool:
     def release_conn(self):
         conn = self.get_conn()
         self.__conns__.put(conn)
+        self.__thread_local__.current_conn = None
+        log.debug('release_conn,当前连接池大小:%s', self.__conns__.qsize())
         pass
 
     # 安全停止
@@ -828,3 +832,5 @@ class Starter:
         pass
 
     pass
+
+
