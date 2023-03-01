@@ -691,7 +691,7 @@ class Starter:
         pass
 
     @staticmethod
-    def start(config: None):
+    def start(config=None):
         if not config:
             config = Starter.load_config()
             pass
