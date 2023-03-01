@@ -573,20 +573,20 @@ class SqlParser:
 
     @staticmethod
     def is_update(sql: str):
-        return sql and str.startswith(str.lower(sql.strip(sql)), 'update')
+        return sql and str.startswith(str.lower(str.strip(sql)), 'update')
         pass
 
     @staticmethod
     def is_delete(sql: str):
-        return sql and str.startswith(str.lower(sql.strip(sql)), 'delete')
+        return sql and str.startswith(str.lower(str.strip(sql)), 'delete')
 
     @staticmethod
     def is_insert(sql: str):
-        return sql and str.startswith(str.lower(sql.strip(sql)), 'insert')
+        return sql and str.startswith(str.lower(str.strip(sql)), 'insert')
 
     @staticmethod
     def is_select(sql: str):
-        return sql and str.startswith(str.lower(sql.strip(sql)), 'select')
+        return sql and str.startswith(str.lower(str.strip(sql)), 'select')
 
     @staticmethod
     def get_table_name(sql: str) -> str:
@@ -594,7 +594,7 @@ class SqlParser:
         table_name = None
         _sql = str.replace(_sql, '\n', " ")
         _sql = str.replace(_sql, '\t', " ")
-        _splits = re.split(r'\s*', _sql)
+        _splits = re.split(r'\s+', _sql)
         _len = len(_splits)
         if SqlParser.is_select(sql) or SqlParser.is_delete(sql):
             for i in range(_len):
@@ -617,7 +617,7 @@ class SqlParser:
                 table_name = _splits[1]
                 pass
             pass
-        return table_name
+        return str.strip(table_name)
         pass
 
     @staticmethod
