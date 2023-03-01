@@ -691,8 +691,10 @@ class Starter:
         pass
 
     @staticmethod
-    def start():
-        config = Starter.load_config()
+    def start(config: None):
+        if not config:
+            config = Starter.load_config()
+            pass
         log.debug('config:%s', json.dumps(config))
         _splits = str.split(__CONFIG_CONNECTIONS_POOLS_KEY__, ".")
 
@@ -782,4 +784,3 @@ class Starter:
         pass
 
     pass
-
