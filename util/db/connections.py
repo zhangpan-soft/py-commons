@@ -199,6 +199,7 @@ class ConnectionProperties:
 # 连接
 class Connection(pymysql.Connection):
 
+    # 构造
     def __init__(self, conn_name: str, properties: ConnectionProperties):
         super().__init__(
             user=properties.user,
@@ -245,37 +246,45 @@ class Connection(pymysql.Connection):
         self.__valid__()
         pass
 
+    # 删除
     def __del__(self):
         try:
             log.debug('Connection[__del__]')
             self.__close__()
             pass
-        except:
+        except BaseException as e:
+            log.warn(e)
             pass
         pass
 
+    # 真实关闭方法, 在对象销毁时, 自动调用
     def __close__(self):
         log.debug('Connection[__close__]')
         super().close()
         pass
 
+    # 脚本退出时调用
     def __exit__(self, exc_type, exc_val, exc_tb):
         log.debug('Connection[__exit__]')
         self.__close__()
         pass
 
+    # 连接校验
     def __valid__(self):
         self.query_one(self.__properties__.validate_query)
         pass
 
+    # 重写关闭连接,这里不是关闭,而是释放连接到连接池
     def close(self) -> None:
         ConnectionPoolManager.get(pool_name=self.__conn_name__).release_conn()
         pass
 
+    # 屏蔽游标方法
     def cursor(self, cursor: None = ...):
         raise Exception("unsupport")
         pass
 
+    # 查询单条数据
     def query_one(self, sql: str, row_mapper=None, args: object = None):
         c = super().cursor()
         try:
@@ -291,6 +300,7 @@ class Connection(pymysql.Connection):
         return data
         pass
 
+    # 查询多条数据
     def query_all(self, sql: str, row_mapper=None, args=None):
         c = super().cursor()
         try:
@@ -309,6 +319,7 @@ class Connection(pymysql.Connection):
             pass
         return results
 
+    # 更新
     def update(self, sql: str, args=None, autocommit=True) -> int:
         c = super().cursor()
         try:
@@ -324,6 +335,7 @@ class Connection(pymysql.Connection):
             pass
         pass
 
+    # 一组更新语句,如果是需要一起提交,则可使用此语句, 或者批量更新都可用此语句
     def update_many(self,
                     sqls: list[str],
                     args: list,
@@ -417,6 +429,7 @@ class ConnectionPool:
             # 创建连接异常,则回滚连接数
             except BaseException as e:
                 self.__calc_conn_num__(-1)
+                raise e
                 pass
             pass
         pass
@@ -501,40 +514,41 @@ class ConnectionPoolManager:
 class ConnectionHelper:
 
     @staticmethod
-    def __get_conn_pool__(sql: str) -> ConnectionPool:
-        pool_name = SqlParser.get_pool_name(sql)
-        pool = ConnectionPoolManager.get(pool_name)
-        return pool
-        pass
-
-    @staticmethod
     def query_one(sql: str, row_mapper=None, args=None):
-        pool = ConnectionHelper.__get_conn_pool__(sql)
+        _ = SqlParser.parse_sql(sql)
+        pool = ConnectionPoolManager.get(_[0])
         conn = pool.get_conn()
         try:
-            return conn.query_one(sql, row_mapper, args)
+            return conn.query_one(_[1], row_mapper, args)
         finally:
             conn.close()
         pass
 
     @staticmethod
     def query_all(sql: str, row_mapper=None, args=None):
-        pool = ConnectionHelper.__get_conn_pool__(sql)
+        _ = SqlParser.parse_sql(sql)
+        pool = ConnectionPoolManager.get(_[0])
         conn = pool.get_conn()
         try:
-            return conn.query_all(sql, row_mapper, args)
+            return conn.query_all(_[1], row_mapper, args)
         finally:
             conn.close()
         pass
 
     @staticmethod
-    def update(sql: str, args=None):
-        pool = ConnectionHelper.__get_conn_pool__(sql)
+    def update(sql: str, args=None) -> int:
+        _ = SqlParser.parse_sql(sql)
+        pool = ConnectionPoolManager.get(_[0])
         conn = pool.get_conn()
         try:
-            return conn.update(sql, args)
+            return conn.update(_[1], args)
         finally:
             conn.close()
+        pass
+
+    @staticmethod
+    def get_conn(pool_name: str):
+        return ConnectionPoolManager.get(pool_name.strip())
         pass
 
     pass
@@ -577,27 +591,28 @@ class SqlParser:
 
     @staticmethod
     def is_update(sql: str):
-        return sql and str.startswith(str.lower(str.strip(sql)), 'update')
+        return sql and sql.lower().strip().startswith('update')
         pass
 
     @staticmethod
     def is_delete(sql: str):
-        return sql and str.startswith(str.lower(str.strip(sql)), 'delete')
+        return sql and sql.lower().strip().startswith('delete')
 
     @staticmethod
     def is_insert(sql: str):
-        return sql and str.startswith(str.lower(str.strip(sql)), 'insert')
+        return sql and sql.lower().strip().startswith('insert')
 
     @staticmethod
     def is_select(sql: str):
-        return sql and str.startswith(str.lower(str.strip(sql)), 'select')
+        return sql and sql.lower().strip().startswith('select')
 
+    # 解析sql, 返回 [虚拟库名,真实sql,虚拟表名,真实表名]
     @staticmethod
-    def get_table_name(sql: str) -> str:
-        _sql = str.lower(str.strip(sql))
+    def parse_sql(sql: str) -> tuple:
+        _sql = sql.lower().strip()
         table_name = None
-        _sql = str.replace(_sql, '\n', " ")
-        _sql = str.replace(_sql, '\t', " ")
+        _sql = _sql.replace('\n', " ")
+        _sql = _sql.replace('\t', " ")
         _splits = re.split(r'\s+', _sql)
         _len = len(_splits)
         if SqlParser.is_select(sql) or SqlParser.is_delete(sql):
@@ -621,18 +636,25 @@ class SqlParser:
                 table_name = _splits[1]
                 pass
             pass
-        return str.strip(table_name)
-        pass
 
-    @staticmethod
-    def get_pool_name(sql: str) -> str:
-        table_name = SqlParser.get_table_name(sql)
-        pool_name = None
+        pool_name = Constants.DEFAULT_POOL_NAME
+        a_table_name = table_name
         if table_name:
-            v_table_name = Constants.TABLE_CONFIG[table_name]
-            pool_name = str.split(v_table_name, '.')[0]
+            table_name = table_name.strip()
+            a_t = Constants.TABLE_CONFIG.get(table_name, None)
+            if a_t:
+                _splits = str.split(a_t, '.')
+                if len(_splits) == 2:
+                    pool_name = _splits[0].strip()
+                    a_table_name = _splits[1].strip()
+                    pass
+                elif len(_splits) == 1:
+                    pool_name = Constants.DEFAULT_POOL_NAME
+                    a_table_name = _splits[0]
+                    pass
+                pass
             pass
-        return pool_name
+        return pool_name, sql if not a_table_name else sql.replace(table_name, a_table_name), table_name, a_table_name,
         pass
 
     @staticmethod
@@ -643,14 +665,14 @@ class SqlParser:
         if isinstance(args, dict):
             keys = args.keys()
             for key in keys:
-                sql = str.replace(sql, ':' + key, '%(' + key + ')s')
+                sql = sql.replace(':' + key, '%(' + key + ')s')
                 pass
             pass
         elif isinstance(args, list):
-            sql = str.replace(sql, '?', '%s')
+            sql = sql.replace('?', '%s')
             pass
         elif isinstance(args, tuple):
-            sql = str.replace(sql, '?', '%s')
+            sql = sql.replace('?', '%s')
             _args = []
             for arg in args:
                 _args.append(arg)
@@ -658,7 +680,7 @@ class SqlParser:
             args = _args
             pass
         else:
-            sql = str.replace(sql, '?', '%s')
+            sql = sql.replace('?', '%s')
             pass
         return sql, args
 
@@ -667,6 +689,8 @@ class SqlParser:
 
 class Constants:
     TABLE_CONFIG = {}
+
+    DEFAULT_POOL_NAME = None
 
     @staticmethod
     def init_table_config(config: dict):
@@ -685,6 +709,7 @@ __CONFIG_KEY__ = "db.util"
 __CONFIG_CONNECTIONS_KEY__ = __CONFIG_KEY__ + ".connections"
 __CONFIG_CONNECTIONS_POOLS_KEY__ = __CONFIG_CONNECTIONS_KEY__ + ".pools"
 __CONFIG_CONNECTIONS_TABLES_KEY__ = __CONFIG_CONNECTIONS_KEY__ + ".tables"
+__CONFIG_CONNECTIONS_DEFAULT_POOL_NAME_KEY__ = __CONFIG_CONNECTIONS_KEY__ + '.default_pool'
 
 __CONFIG_FILES__ = [
     'application.yaml',
@@ -699,6 +724,8 @@ __CONFIG_FILES__ = [
 
 
 class Starter:
+    __STARTING__ = False
+    __STARTING_LOCK__ = threading.Lock()
 
     @staticmethod
     def load_config() -> dict:
@@ -725,88 +752,108 @@ class Starter:
 
     @staticmethod
     def is_yaml(_p: str):
-        return str.endswith(_p, 'yaml')
+        return _p.endswith('yaml')
         pass
 
     @staticmethod
     def is_json(_p: str):
-        return str.endswith(_p, 'json')
+        return _p.endswith('json')
         pass
 
     @staticmethod
     def is_properties(_p: str):
-        return str.endswith(_p, 'properties')
+        return _p.endswith('properties')
         pass
 
     @staticmethod
     def start(config=None):
-        if not config:
-            config = Starter.load_config()
+        if Starter.__STARTING__:
+            raise Exception('already staring...')
+        Starter.__STARTING_LOCK__.acquire(blocking=True)
+        try:
+            if Starter.__STARTING__:
+                raise Exception('already staring...')
+            Starter.__STARTING__ = True
             pass
-        log.debug('config:%s', json.dumps(config))
-        _splits = str.split(__CONFIG_CONNECTIONS_POOLS_KEY__, ".")
-
-        _ = Starter.__get_config_dict__(root_config=config, key=__CONFIG_CONNECTIONS_POOLS_KEY__)
-
-        _properties = {}
-
-        _ks = _.keys()
-
-        for _k in _ks:
-            _properties[_k] = ConnectionProperties(
-                user=_.get(_k, {}).get('user', None),
-                password=_.get(_k, {}).get('password', None),
-                host=_.get(_k, {}).get('host', None),
-                database=_.get(_k, {}).get('database', None),
-                unix_socket=_.get(_k, {}).get('unix_socket', None),
-                port=_.get(_k, {}).get('port', None),
-                charset=_.get(_k, {}).get('charset', None),
-                sql_mode=_.get(_k, {}).get('sql_mode', None),
-                read_default_file=_.get(_k, {}).get('read_default_file', None),
-                conv=_.get(_k, {}).get('conv', None),
-                use_unicode=_.get(_k, {}).get('use_unicode', None),
-                client_flag=_.get(_k, {}).get('client_flag', None),
-                init_command=_.get(_k, {}).get('init_command', None),
-                connect_timeout=_.get(_k, {}).get('connect_timeout', None),
-                read_default_group=_.get(_k, {}).get('read_default_group', None),
-                autocommit=_.get(_k, {}).get('autocommit', None),
-                local_infile=_.get(_k, {}).get('local_infile', None),
-                max_allowed_packet=_.get(_k, {}).get('max_allowed_packet', None),
-                defer_connect=_.get(_k, {}).get('defer_connect', None),
-                auth_plugin_map=_.get(_k, {}).get('auth_plugin_map', None),
-                read_timeout=_.get(_k, {}).get('read_timeout', None),
-                write_timeout=_.get(_k, {}).get('write_timeout', None),
-                bind_address=_.get(_k, {}).get('bind_address', None),
-                binary_prefix=_.get(_k, {}).get('binary_prefix', None),
-                program_name=_.get(_k, {}).get('program_name', None),
-                server_public_key=_.get(_k, {}).get('server_public_key', None),
-                ssl=_.get(_k, {}).get('ssl', None),
-                ssl_ca=_.get(_k, {}).get('ssl_ca', None),
-                ssl_cert=_.get(_k, {}).get('ssl_cert', None),
-                ssl_disabled=_.get(_k, {}).get('ssl_disabled', None),
-                ssl_key=_.get(_k, {}).get('ssl_key', None),
-                ssl_verify_cert=_.get(_k, {}).get('ssl_verify_cert', None),
-                ssl_verify_identity=_.get(_k, {}).get('ssl_verify_identity', None),
-                compress=_.get(_k, {}).get('compress', None),  # not supported
-                named_pipe=_.get(_k, {}).get('named_pipe', None),  # not supported
-                passwd=_.get(_k, {}).get('passwd', None),  # deprecated
-                db=_.get(_k, {}).get('db', None),  # deprecated,,
-                pool_maxsize=_.get(_k, {}).get('pool_maxsize', None),
-                pool_minsize=_.get(_k, {}).get('pool_minsize', None),
-                max_lifetime=_.get(_k, {}).get('max_lifetime', None),
-                validate_query=_.get(_k, {}).get('validate_query', None),
-                validate_interval=_.get(_k, {}).get('validate_interval', None),
-                max_wait_time=_.get(_k, {}).get('max_wait_time', None)
-            )
+        finally:
+            Starter.__STARTING_LOCK__.release()
             pass
+        try:
+            if not config:
+                config = Starter.load_config()
+                pass
+            log.debug('config:%s', json.dumps(config))
+            _splits = __CONFIG_CONNECTIONS_POOLS_KEY__.split(".")
 
-        for _pk in _properties.keys():
-            ConnectionPoolManager.add(_pk, ConnectionPool(_pk, _properties[_pk]))
+            _ = Starter.__get_config__(root_config=config, key=__CONFIG_CONNECTIONS_POOLS_KEY__)
+
+            _properties = {}
+
+            _ks = _.keys()
+
+            for _k in _ks:
+                _properties[_k] = ConnectionProperties(
+                    user=_.get(_k, {}).get('user', None),
+                    password=_.get(_k, {}).get('password', None),
+                    host=_.get(_k, {}).get('host', None),
+                    database=_.get(_k, {}).get('database', None),
+                    unix_socket=_.get(_k, {}).get('unix_socket', None),
+                    port=_.get(_k, {}).get('port', None),
+                    charset=_.get(_k, {}).get('charset', None),
+                    sql_mode=_.get(_k, {}).get('sql_mode', None),
+                    read_default_file=_.get(_k, {}).get('read_default_file', None),
+                    conv=_.get(_k, {}).get('conv', None),
+                    use_unicode=_.get(_k, {}).get('use_unicode', None),
+                    client_flag=_.get(_k, {}).get('client_flag', None),
+                    init_command=_.get(_k, {}).get('init_command', None),
+                    connect_timeout=_.get(_k, {}).get('connect_timeout', None),
+                    read_default_group=_.get(_k, {}).get('read_default_group', None),
+                    autocommit=_.get(_k, {}).get('autocommit', None),
+                    local_infile=_.get(_k, {}).get('local_infile', None),
+                    max_allowed_packet=_.get(_k, {}).get('max_allowed_packet', None),
+                    defer_connect=_.get(_k, {}).get('defer_connect', None),
+                    auth_plugin_map=_.get(_k, {}).get('auth_plugin_map', None),
+                    read_timeout=_.get(_k, {}).get('read_timeout', None),
+                    write_timeout=_.get(_k, {}).get('write_timeout', None),
+                    bind_address=_.get(_k, {}).get('bind_address', None),
+                    binary_prefix=_.get(_k, {}).get('binary_prefix', None),
+                    program_name=_.get(_k, {}).get('program_name', None),
+                    server_public_key=_.get(_k, {}).get('server_public_key', None),
+                    ssl=_.get(_k, {}).get('ssl', None),
+                    ssl_ca=_.get(_k, {}).get('ssl_ca', None),
+                    ssl_cert=_.get(_k, {}).get('ssl_cert', None),
+                    ssl_disabled=_.get(_k, {}).get('ssl_disabled', None),
+                    ssl_key=_.get(_k, {}).get('ssl_key', None),
+                    ssl_verify_cert=_.get(_k, {}).get('ssl_verify_cert', None),
+                    ssl_verify_identity=_.get(_k, {}).get('ssl_verify_identity', None),
+                    compress=_.get(_k, {}).get('compress', None),  # not supported
+                    named_pipe=_.get(_k, {}).get('named_pipe', None),  # not supported
+                    passwd=_.get(_k, {}).get('passwd', None),  # deprecated
+                    db=_.get(_k, {}).get('db', None),  # deprecated,,
+                    pool_maxsize=_.get(_k, {}).get('pool_maxsize', None),
+                    pool_minsize=_.get(_k, {}).get('pool_minsize', None),
+                    max_lifetime=_.get(_k, {}).get('max_lifetime', None),
+                    validate_query=_.get(_k, {}).get('validate_query', None),
+                    validate_interval=_.get(_k, {}).get('validate_interval', None),
+                    max_wait_time=_.get(_k, {}).get('max_wait_time', None)
+                )
+                pass
+
+            for _pk in _properties.keys():
+                ConnectionPoolManager.add(_pk, ConnectionPool(_pk, _properties[_pk]))
+                pass
+
+            _ = Starter.__get_config__(root_config=config, key=__CONFIG_CONNECTIONS_TABLES_KEY__)
+
+            Constants.init_table_config(_)
+
+            Constants.DEFAULT_POOL_NAME = Starter.__get_config__(root_config=config,
+                                                                 key=__CONFIG_CONNECTIONS_DEFAULT_POOL_NAME_KEY__)
             pass
-
-        _ = Starter.__get_config_dict__(root_config=config, key=__CONFIG_CONNECTIONS_TABLES_KEY__)
-
-        Constants.init_table_config(_)
+        except BaseException as e:
+            Starter.__STARTING__ = False
+            raise e
+            pass
 
         pass
 
@@ -819,9 +866,9 @@ class Starter:
         pass
 
     @staticmethod
-    def __get_config_dict__(root_config: dict, key: str):
+    def __get_config__(root_config: dict, key: str):
         _ = dict(root_config)
-        _splits = str.split(key, ".")
+        _splits = key.split(".")
         for _s in _splits:
             if not _:
                 raise Exception("config error")
@@ -832,5 +879,3 @@ class Starter:
         pass
 
     pass
-
-
