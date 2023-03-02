@@ -515,7 +515,7 @@ class ConnectionHelper:
 
     @staticmethod
     def query_one(sql: str, row_mapper=None, args=None):
-        _ = SqlParser.parse_sql(sql)
+        _ = SqlParser.parse(sql)
         pool = ConnectionPoolManager.get(_[0])
         conn = pool.get_conn()
         try:
@@ -526,7 +526,7 @@ class ConnectionHelper:
 
     @staticmethod
     def query_all(sql: str, row_mapper=None, args=None):
-        _ = SqlParser.parse_sql(sql)
+        _ = SqlParser.parse(sql)
         pool = ConnectionPoolManager.get(_[0])
         conn = pool.get_conn()
         try:
@@ -537,7 +537,7 @@ class ConnectionHelper:
 
     @staticmethod
     def update(sql: str, args=None) -> int:
-        _ = SqlParser.parse_sql(sql)
+        _ = SqlParser.parse(sql)
         pool = ConnectionPoolManager.get(_[0])
         conn = pool.get_conn()
         try:
@@ -608,7 +608,7 @@ class SqlParser:
 
     # 解析sql, 返回 [虚拟库名,真实sql,虚拟表名,真实表名]
     @staticmethod
-    def parse_sql(sql: str) -> tuple:
+    def parse(sql: str) -> tuple:
         _sql = sql.lower().strip()
         table_name = None
         _sql = _sql.replace('\n', " ")
@@ -626,14 +626,22 @@ class SqlParser:
                 pass
             pass
         elif SqlParser.is_insert(sql):
-            if _len >= 3:
-                _t = _splits[2]
-                table_name = re.split(r'\(', _t)[0]
+            for i in range(_len):
+                if _splits[i] == 'into':
+                    if i < (_len - 1):
+                        table_name = re.split(r'\(', _splits[i + 1])[0]
+                        break
+                    pass
                 pass
             pass
         elif SqlParser.is_update(sql):
-            if _len >= 2:
-                table_name = _splits[1]
+            for i in range(_len):
+                if _splits[i] == 'update':
+                    if i < (_len - 1):
+                        table_name = _splits[i + 1]
+                        break
+                        pass
+                    pass
                 pass
             pass
 
@@ -700,6 +708,7 @@ class Constants:
     @staticmethod
     def reset():
         Constants.TABLE_CONFIG = {}
+        Constants.DEFAULT_POOL_NAME = None
         pass
 
     pass
