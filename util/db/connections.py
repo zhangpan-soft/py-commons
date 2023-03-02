@@ -337,13 +337,13 @@ class Connection(pymysql.Connection):
 
     # 一组更新语句,如果是需要一起提交,则可使用此语句, 或者批量更新都可用此语句
     def update_many(self,
-                    sqls: list[str],
+                    sqls: list,
                     args: list,
                     autocommit=True,
                     assert_for_exception: bool = False,
                     rollback_for_exception: bool = False):
         c = super().cursor()
-        results = list[int]()
+        results = list()
         try:
             _index = -1
             for sql in sqls:
@@ -387,7 +387,7 @@ class ConnectionPool:
         # 属性参数
         self.properties = properties
         # 可用连接队列
-        self.__conns__ = LifoQueue[Connection](properties.pool_maxsize)
+        self.__conns__ = LifoQueue(properties.pool_maxsize)
         # thread local
         self.__thread_local__ = threading.local()
         # 当前连接
