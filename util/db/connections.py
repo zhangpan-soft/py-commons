@@ -609,7 +609,7 @@ class SqlParser:
     # 解析sql, 返回 [虚拟库名,真实sql,虚拟表名,真实表名]
     @staticmethod
     def parse(sql: str) -> tuple:
-        _sql = sql.lower().strip()
+        _sql = sql.strip()
         table_name = None
         _sql = _sql.replace('\n', " ")
         _sql = _sql.replace('\t', " ")
@@ -617,7 +617,7 @@ class SqlParser:
         _len = len(_splits)
         if SqlParser.is_select(sql) or SqlParser.is_delete(sql):
             for i in range(_len):
-                if _splits[i] == 'from':
+                if _splits[i].lower() == 'from':
                     if i < (_len - 1):
                         table_name = _splits[i + 1]
                         break
@@ -627,7 +627,7 @@ class SqlParser:
             pass
         elif SqlParser.is_insert(sql):
             for i in range(_len):
-                if _splits[i] == 'into':
+                if _splits[i].lower() == 'into':
                     if i < (_len - 1):
                         table_name = re.split(r'\(', _splits[i + 1])[0]
                         break
@@ -636,7 +636,7 @@ class SqlParser:
             pass
         elif SqlParser.is_update(sql):
             for i in range(_len):
-                if _splits[i] == 'update':
+                if _splits[i].lower() == 'update':
                     if i < (_len - 1):
                         table_name = _splits[i + 1]
                         break
