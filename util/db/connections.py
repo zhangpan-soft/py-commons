@@ -1,3 +1,4 @@
+import datetime
 import json
 import time
 
@@ -7,7 +8,6 @@ import threading
 import re
 import yaml
 import os
-from queue import LifoQueue
 import util.os_env as os_env
 
 from util.log import logger
@@ -244,6 +244,22 @@ class Connection(pymysql.Connection):
         self.__properties__ = properties
         self.__conn_name__ = conn_name
         self.__valid__()
+        # 计算过期时间,提前10秒
+        self.__expire_time__ = datetime.datetime.now() + datetime.timedelta(seconds=properties.max_lifetime - 10)
+        self.__last_time_used__ = datetime.datetime.now()
+        pass
+
+    # 检测方法
+    def __check__(self) -> bool:
+        try:
+            self.__valid__()
+            pass
+        except BaseException as e:
+            log.error(e)
+            return False
+            pass
+
+        return self.__expire_time__ >= datetime.datetime.now()
         pass
 
     # 删除
@@ -261,6 +277,11 @@ class Connection(pymysql.Connection):
     def __close__(self):
         log.debug('Connection[__close__]')
         super().close()
+        del self.__properties__
+        del self.__conn_name__
+        # 计算过期时间,提前10秒
+        del self.__expire_time__
+        del self.__last_time_used__
         pass
 
     # 脚本退出时调用
@@ -271,12 +292,24 @@ class Connection(pymysql.Connection):
 
     # 连接校验
     def __valid__(self):
-        self.query_one(self.__properties__.validate_query)
+        c = super().cursor()
+        try:
+            c.execute(self.__properties__.validate_query)
+            pass
+        finally:
+            c.close()
+            pass
         pass
 
     # 重写关闭连接,这里不是关闭,而是释放连接到连接池
     def close(self) -> None:
-        ConnectionPoolManager.get(pool_name=self.__conn_name__).release_conn()
+        if ConnectionPoolManager.get(pool_name=self.__conn_name__):
+            ConnectionPoolManager.get(pool_name=self.__conn_name__).release_conn()
+            pass
+        else:
+            self.__close__()
+            ConnectionMap.remove(self.__conn_name__)
+            pass
         pass
 
     # 屏蔽游标方法
@@ -286,6 +319,7 @@ class Connection(pymysql.Connection):
 
     # 查询单条数据
     def query_one(self, sql: str, row_mapper=None, args: object = None):
+        self.__last_time_used__ = datetime.datetime.now()
         c = super().cursor()
         try:
             a = SqlParser.get_sql(sql, args)
@@ -302,6 +336,7 @@ class Connection(pymysql.Connection):
 
     # 查询多条数据
     def query_all(self, sql: str, row_mapper=None, args=None):
+        self.__last_time_used__ = datetime.datetime.now()
         c = super().cursor()
         try:
             a = SqlParser.get_sql(sql, args)
@@ -321,6 +356,7 @@ class Connection(pymysql.Connection):
 
     # 更新
     def update(self, sql: str, args=None, autocommit=True) -> int:
+        self.__last_time_used__ = datetime.datetime.now()
         c = super().cursor()
         try:
             a = SqlParser.get_sql(sql, args)
@@ -342,6 +378,7 @@ class Connection(pymysql.Connection):
                     autocommit=True,
                     assert_for_exception: bool = False,
                     rollback_for_exception: bool = False):
+        self.__last_time_used__ = datetime.datetime.now()
         c = super().cursor()
         results = list()
         try:
@@ -387,11 +424,9 @@ class ConnectionPool:
         # 属性参数
         self.properties = properties
         # 可用连接队列
-        self.__conns__ = LifoQueue(properties.pool_maxsize)
+        self.__conns__ = list()
         # thread local
         self.__thread_local__ = threading.local()
-        # 当前连接
-        self.__thread_local__.current_conn = None
         # 当前连接锁
         self.__current_conn_lock__ = threading.Lock()
         # 连接数
@@ -402,6 +437,56 @@ class ConnectionPool:
         self.__destroying__ = False
         # 创建连接
         self.__create_connections__()
+        self.__DAEMON_THREAD__ = threading.Thread(target=self.__check__)
+        self.__DAEMON_THREAD__.setDaemon(True)
+        self.__DAEMON_THREAD__.start()
+        pass
+
+    def __check__(self):
+        while not self.__destroying__:
+            log.debug("__check__,当前连接数:%s", self.__conn_num__)
+            # 临时copy列表
+            _conns = list(self.__conns__)
+            log.debug("拷贝链接,当前连接数:%s", self.__conn_num__)
+            for _conn in _conns:
+
+                try:
+                    # 将链接从列表移除
+                    self.__conns__.remove(_conn)
+                    log.debug("将链接从列表移除,当前连接数:%s", self.__conn_num__)
+                    # 未校验通过
+                    if not _conn.__check__():
+                        # self.__remove_conn__(_conn)
+                        self.__calc_conn_num__(-1)
+                        log.debug("校验未通过,连接数-1,当前连接数:%s", self.__conn_num__)
+                        _conn.__close__()
+                        log.debug("校验未通过,关闭连接,当前连接数:%s", self.__conn_num__)
+                        pass
+                    else:
+                        # 如果最后一次使用时间大于10分钟,并且连接总数大于连接池最小值,则移除连接
+                        if self.__conn_num__ > self.properties.pool_minsize and _conn.__last_time_used__ < (
+                                datetime.datetime.now() - datetime.timedelta(minutes=10)):
+                            # self.__remove_conn__(_conn)
+                            self.__calc_conn_num__(-1)
+                            log.debug("当前连接数大于连接池最小值&连接未使用超过10分钟,连接数-1,当前连接数:%s",
+                                      self.__conn_num__)
+                            _conn.__close__()
+                            log.debug("当前连接数大于连接池最小值&连接未使用超过10分钟,关闭连接,当前连接数:%s",
+                                      self.__conn_num__)
+                            pass
+                        else:
+                            self.__conns__.append(_conn)
+                            log.debug("校验通过,将连接放回列表,当前连接数:%s", self.__conn_num__)
+                            pass
+                        pass
+                    pass
+                except BaseException as ignore:
+                    continue
+                    pass
+                pass
+            time.sleep(self.properties.validate_interval)
+            pass
+
         pass
 
     # 当前连接数计算
@@ -414,20 +499,24 @@ class ConnectionPool:
             self.__conn_num__ = self.__conn_num__ - increment
             pass
         self.__conn_num_lock__.release()
+        log.debug("连接数计算:__calc_conn_num__,当前连接数:%s,result:%s", self.__conn_num__, result)
         return result
         pass
 
     # 创建连接,线程安全
     def __create_connections__(self):
+        log.debug("创建连接...")
         # 先加数,加成功则创建连接,否则不创建
         if self.__calc_conn_num__(1):
             # 创建连接
             try:
                 conn = Connection(self.pool_name, self.properties)
-                self.__conns__.put(conn)
+                self.__conns__.append(conn)
+                log.debug("创建连接-成功")
                 pass
             # 创建连接异常,则回滚连接数
             except BaseException as e:
+                log.debug("创建连接-失败")
                 self.__calc_conn_num__(-1)
                 raise e
                 pass
@@ -438,15 +527,28 @@ class ConnectionPool:
     def get_conn(self) -> Connection:
         if self.__destroying__:
             raise Exception('连接池正在销毁')
-        log.debug('get_conn,当前连接池大小:%s', self.__conns__.qsize())
-        if self.__thread_local__.current_conn:
-            log.debug('get_conn,当前连接池大小:%s', self.__conns__.qsize())
-            return self.__thread_local__.current_conn
+        log.debug('get_conn,当前连接池大小:%s,连接总数:%s', len(self.__conns__), self.__conn_num__)
+        if self.__thread_local__.__dict__.get('current_conn', None):
+            log.debug('get_conn,当前连接池大小:%s,连接总数:%s', len(self.__conns__), self.__conn_num__)
+            return self.__thread_local__.__dict__.get('current_conn', None)
         self.__current_conn_lock__.acquire(blocking=True, timeout=self.properties.connect_timeout)
         try:
-            if self.__thread_local__.current_conn:
-                return self.__thread_local__.current_conn
-            conn = self.__conns__.get(block=True, timeout=self.properties.connect_timeout)
+            if self.__thread_local__.__dict__.get('current_conn', None):
+                return self.__thread_local__.__dict__.get('current_conn', None)
+            conn = None
+            for i in range(self.properties.connect_timeout):
+                try:
+                    conn = self.__conns__.pop()
+                    if conn:
+                        break
+                        pass
+                    self.__create_connections__()
+                    pass
+                except BaseException as e:
+                    self.__create_connections__()
+                    pass
+                time.sleep(1)
+                pass
             if not conn:
                 raise Exception('无可用的连接')
             self.__thread_local__.current_conn = conn
@@ -454,16 +556,16 @@ class ConnectionPool:
         finally:
             self.__current_conn_lock__.release()
             pass
-        log.debug('get_conn,当前连接池大小:%s', self.__conns__.qsize())
-        return self.__thread_local__.current_conn
+        log.debug('get_conn,当前连接池大小:%s,连接总数:%s', len(self.__conns__), self.__conn_num__)
+        return self.__thread_local__.__dict__.get('current_conn', None)
         pass
 
     # 释放连接
     def release_conn(self):
         conn = self.get_conn()
-        self.__conns__.put(conn)
-        self.__thread_local__.current_conn = None
-        log.debug('release_conn,当前连接池大小:%s', self.__conns__.qsize())
+        self.__conns__.append(conn)
+        self.__thread_local__.__delattr__('current_conn')
+        log.debug('get_conn,当前连接池大小:%s,连接总数:%s', len(self.__conns__), self.__conn_num__)
         pass
 
     # 安全停止
@@ -473,12 +575,28 @@ class ConnectionPool:
 
     def __destroy__(self):
         self.__destroying__ = True
-        while self.__conns__.qsize() != self.__conn_num__:
+        while len(self.__conns__) != self.__conn_num__:
             time.sleep(1)
             pass
-        # for _ in range(self.__conns__.qsize()):
-        #     self.__conns__.get().__del__()
-        #     pass
+        for _conn in self.__conns__:
+            _conn.__del__()
+            pass
+        del self.pool_name
+        # 属性参数
+        del self.properties
+        # 可用连接队列
+        del self.__conns__
+        # thread local
+        del self.__thread_local__
+        # 当前连接锁
+        del self.__current_conn_lock__
+        # 连接数
+        del self.__conn_num__
+        # 连接数锁
+        del self.__conn_num_lock__
+        # 正在销毁标志
+        del self.__destroying__
+        del self.__DAEMON_THREAD__
         pass
 
     pass
@@ -490,7 +608,7 @@ class ConnectionPoolManager:
 
     @staticmethod
     def get(pool_name: str) -> ConnectionPool:
-        return ConnectionPoolManager.__conn_pools__[pool_name]
+        return ConnectionPoolManager.__conn_pools__.get(pool_name, None)
         pass
 
     @staticmethod
@@ -500,11 +618,21 @@ class ConnectionPoolManager:
 
     @staticmethod
     def remove(pool_name: str):
-        del ConnectionPoolManager.__conn_pools__[pool_name]
+
+        _p = ConnectionPoolManager.get(pool_name)
+        if _p:
+            _p.__del__()
+            del _p
+            pass
         pass
 
     @staticmethod
     def reset():
+        _ks = ConnectionPoolManager.__conn_pools__.keys()
+        _kk = list(_ks)
+        for _k in _kk:
+            ConnectionPoolManager.remove(pool_name=_k)
+            pass
         ConnectionPoolManager.__conn_pools__ = {}
         pass
 
